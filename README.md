@@ -10,18 +10,30 @@ A lightweight, framework-agnostic JavaScript SDK for handling CyberSource 3D Sec
 - ✅ **Smart Loading** - Built-in polling for global Flex dependencies
 - ✅ **TypeScript First** - Full type definitions for a better developer experience
 - ✅ **Framework Agnostic** - Seamlessly integrates with React, Vue, Angular, or Vanilla JS
-- ✅ **Lightweight** - Zero external dependencies (~8KB gzipped)
+
+---
+
+## 🏗 High-Level Flow
+
+1.  **Backend Initialization**: Your backend generates a `Capture Context` (a signed JWT) from CyberSource.
+2.  **Frontend Rendering**: Use the `WebClient` to render secure iFrame fields into your page.
+3.  **Tokenization**: The SDK sends card data directly to CyberSource and returns a `Transient Token`.
+4.  **3DS Orchestration**: Collect device data and handle the 3DS Challenge if required by your processor.
+
+---
 
 ## Installation
 
 ```bash
-npm install @richy8/cybersource-3ds-web
+npm install @deskcreate/cybersource-3ds-web
 ```
+
+---
 
 ## Quick Start
 
 ### 1. Include Flex SDK
-The Flex Microform script must be included on your page for card collection.
+The Flex Microform script must be included on your page to enable secure card collection.
 
 ```html
 <script src="https://flex.cybersource.com/cybersource/assets/microform/0.11/flex-microform.min.js"></script>
@@ -30,127 +42,138 @@ The Flex Microform script must be included on your page for card collection.
 ### 2. Initialize the Client
 
 ```javascript
-import { WebClient } from '@richy8/cybersource-3ds-web'
+import { WebClient } from '@deskcreate/cybersource-3ds-web'
 
 const client = new WebClient()
 
-// Wait for the global Flex script to be ready
+// 💡 Important: Wait for the global Flex script to be ready
 await client.waitForLibrary()
 ```
 
 ### 3. Setup Secure Card Input
+> [!IMPORTANT]
+> **Flex Microform only handles Card Number and CVV.** You MUST collect the Expiry Month and Expiry Year using your own standard HTML inputs.
 
+#### Minimal Setup
 ```javascript
-const flex = await client.setupFlexMicroform('card-container-id', captureContext, {
+// 'card-container' is the ID of an empty <div> on your page
+const flex = await client.setupFlexMicroform('card-container', captureContext)
+```
+
+#### Customized Setup
+```javascript
+const flex = await client.setupFlexMicroform('card-container', captureContext, {
   layout: 'inline',
   placeholders: {
     cardNumber: '0000 0000 0000 0000',
     securityCode: 'CVV'
   },
   customStyles: {
-    // Label Styles
-    labelColor: '#4b5563',
-    labelFontSize: '14px',
-    labelFontWeight: '600',
-    labelMarginBottom: '8px',
-
-    // Input Styles
     fontSize: '15px',
-    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-    textColor: '#1a1a1a',
-    backgroundColor: '#ffffff',
     borderColor: '#e5e7eb',
-    borderRadius: '10px',
-    inputPadding: '12px',
-    inputHeight: '45px',
-
-    // State Styles
-    focusColor: '#1a1a1a',
-    focusBorderColor: '#1a1a1a',
-    focusShadow: '0 0 0 2px rgba(26, 26, 26, 0.1)',
-    validColor: '#10b981',
-    invalidColor: '#ef4444'
+    borderRadius: '8px'
   }
 })
-
-// Tokenize on form submission
-const { token, cardType, maskedPan } = await flex.tokenize(expiryMonth, expiryYear)
 ```
 
-### 4. Orchestrate 3DS Authentication
-
+### 4. Tokenize & Authenticate
 ```javascript
-// Step A: Collect device data (automatically handles iframe setup)
-await client.collectDeviceData(deviceDataUrl, accessToken)
+// 1. Get the transient token (Pass expiry collected from your own form)
+const { token, cardType } = await flex.tokenize(expiryMonth, expiryYear)
 
-// OR
-// Collect browser info (automatically, without iframe)
-const deviceInformation = await client.collectBrowserInfo()
+// 2. Collect Browser Information (Recommended over iframe-based DDC)
+const deviceInfo = await client.collectBrowserInfo()
 
-// Step B: Show challenge modal (if backend requires step-up)
-// This listens for completion events automatically
-const result = await client.showChallengeModal(stepUpUrl, accessToken, {
-  transactionId: 'TXN_123'
-})
+// 3. Show Challenge Modal (If backend enrollment returns a stepUpUrl)
+const result = await client.showChallengeModal(stepUpUrl, accessToken)
 
 if (result.success) {
-  // Finalize payment with your backend
   await client.closeChallengeModal()
 }
 ```
 
 ---
 
-## Detailed API Reference
+## 📖 Detailed API Reference
 
 ### `WebClient`
 
 #### `waitForLibrary(maxRetries?: number, interval?: number)`
-Encapsulates the polling logic to ensure `window.FLEX` is available before use.
-- **maxRetries**: Number of retry attempts (default: 50)
-- **interval**: Milliseconds between retries (default: 100ms)
+- **Mandatory**: Should be called before any Flex-related methods.
+- **Default**: 50 retries at 100ms intervals.
 
 #### `setupFlexMicroform(containerId, captureContext, options?)`
-Mounts the secure card fields into your container.
-- **containerId**: ID of the HTML element where the form should mount.
-- **options**:
-    - `layout`: `'default'` (stacked) or `'inline'`.
-    - `customStyles`: Object containing colors, fonts, and border styles.
+- **containerId** (Mandatory): String ID of the mount target.
+- **captureContext** (Mandatory): String JWT generated by your backend.
+- **options** (Optional): Includes `layout`, `placeholders`, and `customStyles`.
+
+#### `collectBrowserInfo(ipAddress?: string)`
+- **Recommended**: Gathers browser fingerprint data (language, timezone, screen resolution, etc.) directly. Use this if you want a frictionless flow without managing extra iframes.
+- **ipAddress** (Optional): Provide the client's public IP if already known, otherwise the SDK will attempt to fetch it.
+
+#### `collectDeviceData(deviceDataUrl, accessToken, options?)`
+- **Legacy**: Standard CyberSource DDC flow using a hidden iframe.
+- **deviceDataUrl** (Mandatory): From CyberSource.
+- **accessToken** (Mandatory): From CyberSource.
 
 #### `showChallengeModal(stepUpUrl, accessToken, options?)`
-Opens an iFrame modal to handle the 3D Secure challenge.
-- **options**:
-    - `transactionId`: Optional ID to match against completion messages.
-    - `completionMessageType`: Custom string to listen for (default: `'3DS_COMPLETE'`).
+- **stepUpUrl** (Mandatory): From enrollment respond.
+- **accessToken** (Mandatory): From enrollment respond.
+- **options.transactionId** (Optional): Helps match internal completion events.
 
 ---
 
-## Example: Full Checkout Logic (React Example)
+## 🚀 Realistic Implementation Example
+
+This example demonstrates how the frontend coordinates with your backend API.
 
 ```javascript
 const handleCheckout = async () => {
   const client = new WebClient()
   await client.waitForLibrary()
 
-  // 1. Tokenize card
-  const flex = await client.setupFlexMicroform('card-input', context)
-  const { token } = await flex.tokenize()
+  // --- Step 1: Initialize Fields ---
+  // Your API should return the Capture Context JWT
+  const { captureContext } = await myApi.getCaptureContext()
+  const flex = await client.setupFlexMicroform('checkout-ui', captureContext)
 
-  // 2. Start 3DS Enrollment
-  const enrollment = await api.startPayment({ token })
+  // --- Step 2: Tokenization ---
+  // Collect expiry from your own <select> or <input> fields
+  const { token, cardType } = await flex.tokenize(myMonth, myYear)
 
-  if (enrollment.challengeRequired) {
-    // 3. Automated Challenge Handling
-    await client.showChallengeModal(enrollment.url, enrollment.token)
+  // --- Step 3: Start 3DS Enrollment ---
+  // Collect browser info and send everything to your backend
+  const deviceInfo = await client.collectBrowserInfo()
+
+  // CALL YOUR BACKEND API HERE
+  const enrollment = await myApi.startPayment({ 
+    token, 
+    cardType, 
+    deviceInfo,
+    amount: 100.00 
+  })
+
+  // --- Step 4: Handle Challenge ---
+  if (enrollment.status === 'PENDING_AUTHENTICATION') {
+    const auth = await client.showChallengeModal(
+      enrollment.stepUpUrl, 
+      enrollment.accessToken,
+      { transactionId: enrollment.transactionId }
+    )
+
+    if (!auth.success) throw new Error('Authentication Failed')
+    await client.closeChallengeModal()
   }
 
-  // 4. Complete Payment
-  await api.completePayment(enrollment.transactionId)
+  // --- Step 5: Finalize ---
+  // CALL YOUR BACKEND API HERE
+  const receipt = await myApi.completePayment(enrollment.transactionId)
+  alert('Payment Success: ' + receipt.id)
 }
 ```
 
 ## Contributing
-Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduct and the process for submitting pull requests.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 
 ## License
-MIT License - see the [LICENSE](LICENSE) file for details.
+MIT License.
