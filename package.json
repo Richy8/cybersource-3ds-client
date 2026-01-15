@@ -1,5 +1,5 @@
 {
-  "name": "@your-org/cybersource-3ds-web",
+  "name": "@deskcreate/cybersource-3ds-web",
   "version": "1.0.0",
   "description": "CyberSource 3DS Web SDK for browser-based integrations with Flex Microform support",
   "main": "dist/index.js",
@@ -25,7 +25,7 @@
     "microform",
     "tokenization"
   ],
-  "author": "Your Organization",
+  "author": "DeskCreate",
   "license": "MIT",
   "devDependencies": {
     "@rollup/plugin-commonjs": "^25.0.7",
@@ -40,6 +40,6 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/your-org/cybersource-3ds-web"
+    "url": "https://github.com/deskcreate/cybersource-3ds-web"
   }
 }
