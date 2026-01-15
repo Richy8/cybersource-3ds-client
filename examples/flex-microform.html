@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CyberSource Flex Microform Example</title>
+
+  <!-- Include Flex SDK -->
+  <script src="https://flex.cybersource.com/cybersource/assets/microform/0.11/flex-microform.min.js"></script>
+
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+      max-width: 600px;
+      margin: 50px auto;
+      padding: 20px;
+      background: #f9fafb;
+    }
+
+    .card {
+      background: white;
+      border-radius: 12px;
+      padding: 24px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    }
+
+    h1 {
+      margin: 0 0 24px 0;
+      font-size: 24px;
+      color: #1f2937;
+    }
+
+    button {
+      width: 100%;
+      background: #4f46e5;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 16px;
+      font-weight: 500;
+      margin-top: 24px;
+      transition: background 0.2s;
+    }
+
+    button:hover {
+      background: #4338ca;
+    }
+
+    button:disabled {
+      background: #9ca3af;
+      cursor: not-allowed;
+    }
+
+    #status {
+      margin-top: 16px;
+      padding: 12px;
+      border-radius: 6px;
+      background: #f3f4f6;
+      font-size: 14px;
+      display: none;
+    }
+
+    #status.success {
+      background: #d1fae5;
+      color: #065f46;
+      display: block;
+    }
+
+    #status.error {
+      background: #fee2e2;
+      color: #991b1b;
+      display: block;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="card">
+    <h1>💳 Secure Payment</h1>
+
+    <!-- Flex Microform will render here -->
+    <div id="card-container"></div>
+
+    <button id="payButton">Pay $100.00</button>
+    <div id="status"></div>
+  </div>
+
+  <script src="../dist/index.umd.js"></script>
+  <script>
+    const client = new CyberSource3DS.WebClient();
+    const payButton = document.getElementById('payButton');
+    const statusDiv = document.getElementById('status');
+
+    let flexInstance = null;
+
+    // Initialize Flex Microform on page load
+    async function initializeFlex() {
+      try {
+        // Step 0: Wait for library
+        await client.waitForLibrary();
+
+        // Get capture context from your backend
+        const captureContext = await fetchCaptureContext();
+
+        // Setup Flex Microform
+        flexInstance = await client.setupFlexMicroform(
+          'card-container',
+          captureContext,
+          {
+            layout: 'inline',
+            placeholders: {
+              cardNumber: '0000 0000 0000 0000',
+              securityCode: 'CVV'
+            },
+            customStyles: {
+              labelColor: '#4b5563',
+              labelFontSize: '14px',
+              labelFontWeight: '600',
+              labelMarginBottom: '8px',
+              fontSize: '15px',
+              fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+              textColor: '#1a1a1a',
+              borderColor: '#e5e7eb',
+              borderRadius: '10px',
+              inputPadding: '12px',
+              inputHeight: '45px',
+              focusColor: '#1a1a1a',
+              focusBorderColor: '#1a1a1a'
+            }
+          }
+        );
+
+        console.log('✅ Flex Microform initialized');
+
+      } catch (error) {
+        console.error('Failed to initialize Flex:', error);
+        statusDiv.textContent = '❌ Failed to initialize payment form';
+        statusDiv.className = 'error';
+        statusDiv.style.display = 'block';
+      }
+    }
+
+    // Fetch capture context from backend
+    async function fetchCaptureContext() {
+      // Replace with actual API call to your backend
+      // const response = await fetch('/api/flex/capture-context');
+      // return response.json();
+      return 'your_mock_capture_context';
+    }
+
+    // Handle payment
+    payButton.addEventListener('click', async () => {
+      if (!flexInstance) {
+        statusDiv.textContent = '❌ Payment form not ready';
+        statusDiv.className = 'error';
+        return;
+      }
+
+      try {
+        payButton.disabled = true;
+        statusDiv.textContent = 'Processing...';
+        statusDiv.className = '';
+        statusDiv.style.display = 'block';
+
+        // 1. Tokenize card (pass expiry from your form inputs)
+        const { token, maskedPan, cardType } = await flexInstance.tokenize('12', '2028');
+        console.log('Tokenized:', { token, maskedPan, cardType });
+
+        // 2. Collect device data (using browser info collector)
+        statusDiv.textContent = 'Collecting device info...';
+        const deviceInfo = await client.collectBrowserInfo();
+
+        // 3. Show 3DS challenge (if required by your backend)
+        statusDiv.textContent = 'Verifying card...';
+        const authResult = await client.showChallengeModal(
+          'https://centinelapi.cardinalcommerce.com/V2/Cruise/StepUp',
+          'challenge_access_token',
+          { transactionId: 'TXN_' + Date.now() }
+        );
+
+        if (authResult.success) {
+          // 4. Finalize payment with your backend
+          statusDiv.textContent = 'Completing payment...';
+          const paymentResult = await processPayment(token, authResult);
+
+          if (paymentResult.success) {
+            statusDiv.textContent = '✅ Payment successful!';
+            statusDiv.className = 'success';
+            await client.closeChallengeModal();
+          } else {
+            statusDiv.textContent = '❌ Payment declined: ' + paymentResult.message;
+            statusDiv.className = 'error';
+          }
+        } else {
+          statusDiv.textContent = '❌ Authentication failed';
+          statusDiv.className = 'error';
+        }
+
+      } catch (error) {
+        console.error('Payment error:', error);
+        statusDiv.textContent = `❌ Error: ${error.message}`;
+        statusDiv.className = 'error';
+      } finally {
+        payButton.disabled = false;
+      }
+    });
+
+    // Process payment (call your backend)
+    async function processPayment(token, authResult) {
+      const response = await fetch('/api/payments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token,
+          authResult,
+          amount: 100.00,
+          currency: 'USD'
+        })
+      });
+      return response.json();
+    }
+
+    // Initialize on page load
+    initializeFlex();
+  </script>
+</body>
+
+</html>

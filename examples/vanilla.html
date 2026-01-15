@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CyberSource 3DS - Vanilla JS Example</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 600px;
+      margin: 50px auto;
+      padding: 20px;
+    }
+
+    button {
+      background: #4f46e5;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 16px;
+    }
+
+    button:hover {
+      background: #4338ca;
+    }
+
+    #status {
+      margin-top: 20px;
+      padding: 12px;
+      border-radius: 6px;
+      background: #f3f4f6;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>CyberSource 3DS Demo</h1>
+  <p>Click the button to test 3DS authentication flow</p>
+
+  <button id="payButton">Pay Now</button>
+  <div id="status"></div>
+
+  <script src="../dist/index.umd.js"></script>
+  <script>
+    const threeds = new CyberSource3DS.WebClient();
+    const statusDiv = document.getElementById('status');
+    const payButton = document.getElementById('payButton');
+
+    payButton.addEventListener('click', async () => {
+      try {
+        payButton.disabled = true;
+        statusDiv.textContent = 'Initializing...';
+
+        // Step 0: Wait for library
+        await threeds.waitForLibrary();
+
+        statusDiv.textContent = 'Collecting device data...';
+
+        // Step 1: Collect device data (using browser info collector)
+        const deviceInfo = await threeds.collectBrowserInfo();
+        console.log('Device Info:', deviceInfo);
+
+        statusDiv.textContent = 'Device info collected. Showing challenge...';
+
+        // Step 2: Show challenge
+        const result = await threeds.showChallengeModal(
+          'https://centinelapi.cardinalcommerce.com/V2/Cruise/StepUp',
+          'your_access_token_here',
+          { transactionId: 'TXN_' + Date.now() }
+        );
+
+        if (result.success) {
+          statusDiv.textContent = '✅ Authentication successful!';
+          // Finalize payment logic here...
+
+          // Optionally close modal if not auto-closed
+          await threeds.closeChallengeModal();
+        } else {
+          statusDiv.textContent = '❌ Authentication failed';
+        }
+
+      } catch (error) {
+        statusDiv.textContent = '❌ Error: ' + error.message;
+      } finally {
+        payButton.disabled = false;
+      }
+    });
+  </script>
+</body>
+
+</html>
