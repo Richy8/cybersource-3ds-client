@@ -15,7 +15,7 @@ A lightweight, framework-agnostic JavaScript SDK for handling CyberSource 3D Sec
 ## Installation
 
 ```bash
-npm install @deskcreate/cybersource-3ds-web
+npm install @richy8/cybersource-3ds-web
 ```
 
 ## Quick Start
@@ -30,7 +30,7 @@ The Flex Microform script must be included on your page for card collection.
 ### 2. Initialize the Client
 
 ```javascript
-import { WebClient } from '@deskcreate/cybersource-3ds-web'
+import { WebClient } from '@richy8/cybersource-3ds-web'
 
 const client = new WebClient()
 

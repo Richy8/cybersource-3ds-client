@@ -1,5 +1,5 @@
 {
-  "name": "@deskcreate/cybersource-3ds-web",
+  "name": "@richy8/cybersource-3ds-web",
   "version": "1.0.0",
   "description": "CyberSource 3DS Web SDK for browser-based integrations with Flex Microform support",
   "main": "dist/index.js",
@@ -40,6 +40,6 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/deskcreate/cybersource-3ds-web"
+    "url": "https://github.com/richy8/cybersource-3ds-web"
   }
 }
