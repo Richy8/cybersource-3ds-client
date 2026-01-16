@@ -53,8 +53,14 @@ export function getDefaultStyles(): ModalStyles {
   }
 }
 
-export function applyStyles(element: HTMLElement, styles: Record<string, string>): void {
+export function applyStyles(
+  element: HTMLElement,
+  styles: Record<string, string> | Partial<CSSStyleDeclaration> | undefined
+): void {
+  if (!styles) return
   Object.entries(styles).forEach(([key, value]) => {
-    ;(element.style as any)[key] = value
+    if (value !== undefined && value !== null) {
+      ; (element.style as any)[key] = value
+    }
   })
 }

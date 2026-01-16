@@ -2,6 +2,7 @@ import { DeviceDataCollector } from './ui/device-data-collector'
 import { collectBrowserInfo } from './ui/browser-info-collector'
 import { ChallengeModal } from './ui/challenge-modal'
 import { FlexMicroform } from './ui/flex-microform'
+import { decodeCaptureContext, sleep } from './utils'
 import type {
   DeviceDataOptions,
   ChallengeModalOptions,
@@ -11,6 +12,12 @@ import type {
   FlexMicroformInstance,
   DeviceInformation
 } from './types'
+
+/**
+ * Module-scope singleton state for Flex SDK loading
+ */
+let flexLoadPromise: Promise<void> | null = null
+let loadedFlexScriptUrl: string | null = null
 
 export class WebClient {
   private deviceDataCollector: DeviceDataCollector
@@ -23,45 +30,168 @@ export class WebClient {
   }
 
   /**
-   * Helper to wait for the Flex Microform library to load
+   * Load and wait for the CyberSource Flex Microform SDK
    */
-  async waitForLibrary(maxRetries: number = 50, interval: number = 100): Promise<void> {
-    let retries = 0
-    while (!((window as any).FLEX || (window as any).Flex) && retries < maxRetries) {
-      await new Promise(r => setTimeout(r, interval))
-      retries++
+  private async waitForLibrary(
+    clientLibrary: string,
+    clientLibraryIntegrity?: string
+  ): Promise<void> {
+    // Already loaded with same URL
+    if (
+      typeof (window as any).Flex === 'function' &&
+      loadedFlexScriptUrl === clientLibrary
+    ) {
+      console.log('[WebClient] Flex SDK already loaded')
+      return
     }
 
-    if (!((window as any).FLEX || (window as any).Flex)) {
-      throw new Error('Flex SDK failed to load. Please check your browser console for network errors.')
+    // Different URL requested - reset state
+    if (loadedFlexScriptUrl && loadedFlexScriptUrl !== clientLibrary) {
+      console.log('[WebClient] Different Flex SDK URL requested, reloading...')
+      this.removeFlexScript()
+      flexLoadPromise = null
+      loadedFlexScriptUrl = null
     }
+
+    if (!flexLoadPromise) {
+      flexLoadPromise = this.loadFlexScript(clientLibrary, clientLibraryIntegrity)
+    }
+
+    await flexLoadPromise
+  }
+
+  /**
+   * Load the Flex SDK script
+   */
+  private loadFlexScript(
+    clientLibrary: string,
+    clientLibraryIntegrity?: string
+  ): Promise<void> {
+    return new Promise((resolve, reject) => {
+      // Check for existing script
+      const existingScript = document.querySelector(
+        `script[src="${clientLibrary}"]`
+      ) as HTMLScriptElement | null
+
+      const waitForFlexConstructor = async () => {
+        const maxAttempts = 30
+        const intervalMs = 100
+
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+          if (typeof (window as any).Flex === 'function') {
+            console.log(`[WebClient] ✅ Flex constructor available after ${attempt * intervalMs}ms`)
+            loadedFlexScriptUrl = clientLibrary
+            resolve()
+            return
+          }
+          await sleep(intervalMs)
+        }
+
+        reject(new Error(
+          'Flex SDK script loaded but Flex constructor not available. ' +
+          'This may indicate a network issue or script error.'
+        ))
+      }
+
+      if (existingScript) {
+        console.log('[WebClient] Found existing Flex script tag')
+
+        // Check if script is already loaded
+        if (typeof (window as any).Flex === 'function') {
+          loadedFlexScriptUrl = clientLibrary
+          resolve()
+          return
+        }
+
+        // Wait for existing script to load
+        existingScript.addEventListener('load', () => waitForFlexConstructor(), { once: true })
+        existingScript.addEventListener('error', () => {
+          reject(new Error('Failed to load existing Flex SDK script'))
+        }, { once: true })
+        return
+      }
+
+      // Create new script element
+      console.log('[WebClient] Loading Flex SDK from:', clientLibrary)
+
+      const script = document.createElement('script')
+      script.src = clientLibrary
+      script.async = true
+      script.setAttribute('data-flex-sdk', 'true')
+
+      if (clientLibraryIntegrity) {
+        script.integrity = clientLibraryIntegrity
+        script.crossOrigin = 'anonymous'
+      }
+
+      script.onload = () => {
+        console.log('[WebClient] Flex SDK script onload fired')
+        waitForFlexConstructor()
+      }
+
+      script.onerror = (event) => {
+        console.error('[WebClient] Failed to load Flex SDK:', event)
+        flexLoadPromise = null
+        reject(new Error(
+          'Failed to load Flex SDK. Check network connection and script URL.'
+        ))
+      }
+
+      document.head.appendChild(script)
+    })
+  }
+
+  /**
+   * Remove the Flex SDK script from DOM
+   */
+  private removeFlexScript(): void {
+    const scripts = document.querySelectorAll('script[data-flex-sdk="true"]')
+    scripts.forEach(script => script.parentNode?.removeChild(script))
+
+    // Also try to remove by URL if data attribute wasn't set
+    if (loadedFlexScriptUrl) {
+      const scriptByUrl = document.querySelector(`script[src="${loadedFlexScriptUrl}"]`)
+      scriptByUrl?.parentNode?.removeChild(scriptByUrl)
+    }
+
+    // Clean up global
+    delete (window as any).Flex
   }
 
   /**
    * Initialize Flex Microform for secure card collection
-   * 
-   * @example
-   * const flex = await client.setupFlexMicroform(
-   *   'card-container',
-   *   captureContext,
-   *   {
-   *     layout: 'inline',
-   *     customStyles: {
-   *       borderRadius: '8px',
-   *       borderColor: '#e5e7eb'
-   *     }
-   *   }
-   * )
-   * 
-   * // Later tokenize
-   * const { token } = await flex.tokenize()
    */
   async setupFlexMicroform(
     containerId: string,
     captureContext: string,
     options?: FlexMicroformOptions
   ): Promise<FlexMicroformInstance> {
+    // Decode capture context to get SDK URL
+    const { clientLibrary, clientLibraryIntegrity } = decodeCaptureContext(captureContext)
+
+    console.log('[WebClient] Setting up Flex Microform')
+    console.log('[WebClient] Client library:', clientLibrary)
+
+    // Load the SDK
+    await this.waitForLibrary(clientLibrary, clientLibraryIntegrity)
+
+    // Verify Flex is available
+    const FlexConstructor = (window as any).Flex
+    if (typeof FlexConstructor !== 'function') {
+      throw new Error(
+        'Flex SDK not available after loading. Please try refreshing the page.'
+      )
+    }
+
+    // Clean up existing microform if any
+    if (this.flexMicroform) {
+      this.flexMicroform.destroy()
+      this.flexMicroform = null
+    }
+
+    // Create and initialize new microform
     this.flexMicroform = new FlexMicroform(containerId, captureContext, options)
+
     return this.flexMicroform.initialize()
   }
 
@@ -87,9 +217,8 @@ export class WebClient {
     return collectBrowserInfo(ipAddress)
   }
 
-
   /**
-   * Show challenge modal for OTP authentication
+   * Show challenge modal for 3DS authentication
    */
   async showChallengeModal(
     stepUpUrl: string,
@@ -100,7 +229,7 @@ export class WebClient {
   }
 
   /**
-   * Close challenge modal manually
+   * Close challenge modal
    */
   closeChallengeModal(): void {
     this.challengeModal.close()
@@ -114,13 +243,33 @@ export class WebClient {
   }
 
   /**
-   * Clean up resources
+   * Clean up all resources
    */
   destroy(): void {
+    console.log('[WebClient] Destroying...')
+
     this.deviceDataCollector.destroy()
     this.challengeModal.destroy()
+
     if (this.flexMicroform) {
       this.flexMicroform.destroy()
+      this.flexMicroform = null
     }
+
+    // Note: We don't remove the Flex script on destroy
+    // to allow reuse. Call resetFlexSDK() if needed.
+
+    console.log('[WebClient] Destroyed')
+  }
+
+  /**
+   * Completely reset the Flex SDK state
+   * Call this if you need to load a different SDK version
+   */
+  resetFlexSDK(): void {
+    this.removeFlexScript()
+    flexLoadPromise = null
+    loadedFlexScriptUrl = null
+    console.log('[WebClient] Flex SDK reset')
   }
 }
