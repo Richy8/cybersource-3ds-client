@@ -44,7 +44,7 @@ release-patch:
 	@echo "Pushing to GitHub..."
 	git push origin dev --tags
 	@echo "Publishing to npm..."
-	npm publish
+	npm publish --access public
 	@echo "✅ Patch release $(VERSION) complete!"
 
 release-minor:
@@ -55,7 +55,7 @@ release-minor:
 	@echo "Pushing to GitHub..."
 	git push origin dev --tags
 	@echo "Publishing to npm..."
-	npm publish
+	npm publish --access public
 	@echo "✅ Minor release $(VERSION) complete!"
 
 release-major:
@@ -66,7 +66,7 @@ release-major:
 	@echo "Pushing to GitHub..."
 	git push origin dev --tags
 	@echo "Publishing to npm..."
-	npm publish
+	npm publish --access public
 	@echo "✅ Major release $(VERSION) complete!"
 
 # Dry run - see what would be published
