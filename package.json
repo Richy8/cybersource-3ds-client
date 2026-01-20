@@ -1,6 +1,6 @@
 {
   "name": "@deskcreate/cybersource-3ds-web",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "CyberSource 3DS Web SDK for browser-based integrations with Flex Microform support",
   "main": "dist/index.js",
   "module": "dist/index.esm.js",
