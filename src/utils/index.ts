@@ -78,3 +78,5 @@ export function decodeCaptureContext(
     )
   }
 }
+
+export * from './logger'

@@ -1,5 +1,6 @@
-import type { ChallengeModalOptions, AuthenticationResult, ModalStyles } from '../types'
+import type { ChallengeModalOptions, ModalStyles } from '../types'
 import { getDefaultStyles, applyStyles } from './modal-styles'
+import { Logger } from '../utils'
 
 export class ChallengeModal {
   private overlay: HTMLDivElement | null = null
@@ -7,153 +8,196 @@ export class ChallengeModal {
   private iframe: HTMLIFrameElement | null = null
   private form: HTMLFormElement | null = null
   private messageListener: ((event: MessageEvent) => void) | null = null
+  private timeoutId: ReturnType<typeof setTimeout> | null = null
   private customStyles: Partial<ModalStyles> = {}
-  private currentReject: ((reason?: any) => void) | null = null
+  private isResolved: boolean = false
+  // rejectPromise is used to cancel the promise if the modal is closed manually
+  private rejectPromise: ((reason?: any) => void) | null = null
 
   /**
-   * Show challenge modal
+   * Show challenge modal and wait for completion
+   * Returns a promise that resolves when 3DS challenge completes
    */
   async show(
     stepUpUrl: string,
     accessToken: string,
     options?: ChallengeModalOptions
-  ): Promise<AuthenticationResult> {
+  ): Promise<any> {
+    // Reset state
+    this.isResolved = false
+
     return new Promise((resolve, reject) => {
-      this.currentReject = reject
-      console.log('🔐 Showing challenge modal...')
+      this.rejectPromise = reject
+
+      Logger.info('🔐 Showing challenge modal...')
 
       const timeout = options?.timeout || 10 * 60 * 1000 // 10 minutes
       const styles = { ...getDefaultStyles(), ...this.customStyles }
+      const expectedMessageType = options?.completionMessageType || '3DS_COMPLETE'
+      const expectedTransactionId = options?.transactionId
 
-      // Create overlay
-      this.overlay = document.createElement('div')
-      this.overlay.id = 'threeds-modal-overlay'
-      applyStyles(this.overlay, styles.overlay)
-      document.body.appendChild(this.overlay)
+      // Helper to safely resolve only once
+      const safeResolve = (result: any) => {
+        if (this.isResolved) return
+        this.isResolved = true
+        this.cleanup()
+        resolve(result)
+      }
 
-      // Create modal container
-      this.modal = document.createElement('div')
-      this.modal.id = 'threeds-modal'
-      applyStyles(this.modal, styles.modal)
+      // Helper to safely reject only once
+      const safeReject = (error: Error) => {
+        if (this.isResolved) return
+        this.isResolved = true
+        this.cleanup()
+        reject(error)
+      }
 
-      // Create header
-      const header = document.createElement('div')
-      applyStyles(header, styles.header)
-      header.innerHTML = `
-        <h2 style="margin: 0; font-size: 18px; font-weight: 600;">🔒 Card Authentication</h2>
-        <p style="margin: 8px 0 0 0; font-size: 13px; opacity: 0.9;">Please complete verification with your bank</p>
-      `
+      try {
+        // Create overlay
+        this.overlay = document.createElement('div')
+        this.overlay.id = 'threeds-modal-overlay'
+        applyStyles(this.overlay, styles.overlay)
+        document.body.appendChild(this.overlay)
 
-      // Create iframe container
-      const iframeContainer = document.createElement('div')
-      applyStyles(iframeContainer, styles.iframeContainer)
+        // Create modal container
+        this.modal = document.createElement('div')
+        this.modal.id = 'threeds-modal'
+        applyStyles(this.modal, styles.modal)
 
-      // Create iframe
-      this.iframe = document.createElement('iframe')
-      this.iframe.id = 'step_up_iframe'
-      this.iframe.name = 'stepUpIframe'
-      applyStyles(this.iframe, styles.iframe)
+        // Create header
+        const header = document.createElement('div')
+        applyStyles(header, styles.header)
+        header.innerHTML = `
+          <h2 style="margin: 0; font-size: 18px; font-weight: 600;">🔒 Card Authentication</h2>
+          <p style="margin: 8px 0 0 0; font-size: 13px; opacity: 0.9;">Please complete verification with your bank</p>
+        `
 
-      iframeContainer.appendChild(this.iframe)
+        // Create iframe container
+        const iframeContainer = document.createElement('div')
+        applyStyles(iframeContainer, styles.iframeContainer)
 
-      // Create footer
-      const footer = document.createElement('div')
-      applyStyles(footer, styles.footer)
-      footer.innerHTML = '<p style="margin: 0;">Secured by 3D Secure 2.0</p>'
+        // Create iframe
+        this.iframe = document.createElement('iframe')
+        this.iframe.id = 'step_up_iframe'
+        this.iframe.name = 'stepUpIframe'
+        applyStyles(this.iframe, styles.iframe)
 
-      // Assemble modal
-      this.modal.appendChild(header)
-      this.modal.appendChild(iframeContainer)
-      this.modal.appendChild(footer)
-      this.overlay.appendChild(this.modal)
+        iframeContainer.appendChild(this.iframe)
 
-      // Create form
-      this.form = document.createElement('form')
-      this.form.id = 'step_up_form'
-      this.form.method = 'POST'
-      this.form.action = stepUpUrl
-      this.form.target = 'stepUpIframe'
-      this.form.style.display = 'none'
+        // Create footer
+        const footer = document.createElement('div')
+        applyStyles(footer, styles.footer)
+        footer.innerHTML = '<p style="margin: 0;">Secured by 3D Secure 2.0</p>'
 
-      const jwtInput = document.createElement('input')
-      jwtInput.type = 'hidden'
-      jwtInput.name = 'JWT'
-      jwtInput.value = accessToken
+        // Assemble modal
+        this.modal.appendChild(header)
+        this.modal.appendChild(iframeContainer)
+        this.modal.appendChild(footer)
+        this.overlay.appendChild(this.modal)
 
-      this.form.appendChild(jwtInput)
-      document.body.appendChild(this.form)
+        // Create form for step-up
+        this.form = document.createElement('form')
+        this.form.id = 'step_up_form'
+        this.form.method = 'POST'
+        this.form.action = stepUpUrl
+        this.form.target = 'stepUpIframe'
+        this.form.style.display = 'none'
 
-      // Listen for postMessage
-      this.messageListener = (event: MessageEvent) => {
-        console.log('📩 Received postMessage:', event.data)
+        const jwtInput = document.createElement('input')
+        jwtInput.type = 'hidden'
+        jwtInput.name = 'JWT'
+        jwtInput.value = accessToken
 
-        const msgType = options?.completionMessageType || '3DS_COMPLETE'
-        const txnId = options?.transactionId
+        this.form.appendChild(jwtInput)
+        document.body.appendChild(this.form)
 
-        if (event.data && (event.data.type === msgType || event.data.type === '3DS_CHALLENGE_COMPLETE')) {
-          // If transactionId is provided, ensure it matches
-          if (txnId && event.data.transactionId && event.data.transactionId !== txnId) {
-            console.log(`[ChallengeModal] Ignoring message for different transaction: ${event.data.transactionId}`)
+        // Set up message listener
+        this.messageListener = (event: MessageEvent) => {
+          // Skip if already resolved
+          if (this.isResolved) return
+
+          const data = event.data
+
+          // Validate message structure
+          if (!data || typeof data !== 'object') return
+
+          // Check message type
+          const isValidType = data.type === expectedMessageType || data.type === '3DS_CHALLENGE_COMPLETE'
+          if (!isValidType) return
+
+          Logger.debug('📩 Received 3DS message:', data)
+
+          // Validate transaction ID if provided
+          if (expectedTransactionId && data.transactionId && data.transactionId !== expectedTransactionId) {
+            Logger.debug(`[ChallengeModal] Ignoring message for different transaction: ${data.transactionId}`)
             return
           }
 
-          console.log('✅ 3DS Challenge complete')
+          Logger.info('✅ 3DS Challenge complete')
 
-          window.removeEventListener('message', this.messageListener!)
-          this.currentReject = null
-          this.cleanup()
-          resolve({
-            success: event.data.success !== false,
-            result: event.data.result,
-            authTransactionId: event.data.authTransactionId || event.data.transactionId
-          })
+          // Resolve with the result - passing raw data to follow "no pre-typed structure" request
+          safeResolve(data)
         }
+
+        window.addEventListener('message', this.messageListener)
+
+        // Set up timeout
+        this.timeoutId = setTimeout(() => {
+          Logger.error('❌ Challenge timeout')
+          safeReject(new Error('Challenge timed out. Please try again.'))
+        }, timeout)
+
+        // Submit form to initiate challenge
+        Logger.debug('📤 Submitting challenge form to:', stepUpUrl)
+        this.form.submit()
+
+      } catch (err: any) {
+        safeReject(err)
       }
-
-      window.addEventListener('message', this.messageListener)
-
-      // Submit form
-      console.log('📤 Submitting challenge form')
-      this.form.submit()
-
-      // Timeout
-      const timeoutId = setTimeout(() => {
-        console.error('❌ Challenge timeout')
-        window.removeEventListener('message', this.messageListener!)
-        this.currentReject = null
-        this.cleanup()
-        reject(new Error('Challenge timeout'))
-      }, timeout)
     })
   }
 
   /**
-   * Close challenge modal manually
+   * Close the modal manually
    */
   close(): void {
-    if (this.currentReject) {
-      this.currentReject(new Error('Challenge modal closed manually'))
-      this.currentReject = null
+    Logger.debug('🔒 Closing challenge modal')
+
+    if (!this.isResolved) {
+      // If manually closing and promise exists, reject it to prevent hanging
+      if (this.rejectPromise) {
+        this.rejectPromise(new Error('Challenge closed manually'))
+      }
+      this.isResolved = true
     }
+
     this.cleanup()
   }
 
   /**
-   * Set custom styles
+   * Set custom styles for the modal
    */
   setStyles(styles: Partial<ModalStyles>): void {
     this.customStyles = styles
   }
 
   /**
-   * Clean up modal
+   * Clean up all modal elements and listeners
    */
-  cleanup(): void {
+  private cleanup(): void {
+    // Clear timeout
+    if (this.timeoutId) {
+      clearTimeout(this.timeoutId)
+      this.timeoutId = null
+    }
+
+    // Remove message listener
     if (this.messageListener) {
       window.removeEventListener('message', this.messageListener)
       this.messageListener = null
     }
 
+    // Remove overlay (contains modal)
     if (this.overlay?.parentNode) {
       this.overlay.parentNode.removeChild(this.overlay)
     }
@@ -161,16 +205,24 @@ export class ChallengeModal {
     this.modal = null
     this.iframe = null
 
+    // Remove form
     if (this.form?.parentNode) {
       this.form.parentNode.removeChild(this.form)
     }
     this.form = null
+
+
+    this.rejectPromise = null
   }
 
   /**
-   * Destroy modal
+   * Destroy the modal instance completely
    */
   destroy(): void {
+    if (!this.isResolved && this.rejectPromise) {
+      this.rejectPromise(new Error('ChallengeModal destroyed'))
+    }
+    this.isResolved = true
     this.cleanup()
   }
 }

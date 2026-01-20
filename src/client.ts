@@ -2,7 +2,7 @@ import { DeviceDataCollector } from './ui/device-data-collector'
 import { collectBrowserInfo } from './ui/browser-info-collector'
 import { ChallengeModal } from './ui/challenge-modal'
 import { FlexMicroform } from './ui/flex-microform'
-import { decodeCaptureContext, sleep } from './utils'
+import { decodeCaptureContext, sleep, Logger } from './utils'
 import type {
   DeviceDataOptions,
   ChallengeModalOptions,
@@ -41,13 +41,13 @@ export class WebClient {
       typeof (window as any).Flex === 'function' &&
       loadedFlexScriptUrl === clientLibrary
     ) {
-      console.log('[WebClient] Flex SDK already loaded')
+      Logger.debug('[WebClient] Flex SDK already loaded')
       return
     }
 
     // Different URL requested - reset state
     if (loadedFlexScriptUrl && loadedFlexScriptUrl !== clientLibrary) {
-      console.log('[WebClient] Different Flex SDK URL requested, reloading...')
+      Logger.info('[WebClient] Different Flex SDK URL requested, reloading...')
       this.removeFlexScript()
       flexLoadPromise = null
       loadedFlexScriptUrl = null
@@ -79,7 +79,7 @@ export class WebClient {
 
         for (let attempt = 0; attempt < maxAttempts; attempt++) {
           if (typeof (window as any).Flex === 'function') {
-            console.log(`[WebClient] ✅ Flex constructor available after ${attempt * intervalMs}ms`)
+            Logger.debug(`[WebClient] ✅ Flex constructor available after ${attempt * intervalMs}ms`)
             loadedFlexScriptUrl = clientLibrary
             resolve()
             return
@@ -94,7 +94,7 @@ export class WebClient {
       }
 
       if (existingScript) {
-        console.log('[WebClient] Found existing Flex script tag')
+        Logger.debug('[WebClient] Found existing Flex script tag')
 
         // Check if script is already loaded
         if (typeof (window as any).Flex === 'function') {
@@ -112,7 +112,7 @@ export class WebClient {
       }
 
       // Create new script element
-      console.log('[WebClient] Loading Flex SDK from:', clientLibrary)
+      Logger.info('[WebClient] Loading Flex SDK from:', clientLibrary)
 
       const script = document.createElement('script')
       script.src = clientLibrary
@@ -125,12 +125,12 @@ export class WebClient {
       }
 
       script.onload = () => {
-        console.log('[WebClient] Flex SDK script onload fired')
+        Logger.debug('[WebClient] Flex SDK script onload fired')
         waitForFlexConstructor()
       }
 
       script.onerror = (event) => {
-        console.error('[WebClient] Failed to load Flex SDK:', event)
+        Logger.error('[WebClient] Failed to load Flex SDK:', event)
         flexLoadPromise = null
         reject(new Error(
           'Failed to load Flex SDK. Check network connection and script URL.'
@@ -169,8 +169,8 @@ export class WebClient {
     // Decode capture context to get SDK URL
     const { clientLibrary, clientLibraryIntegrity } = decodeCaptureContext(captureContext)
 
-    console.log('[WebClient] Setting up Flex Microform')
-    console.log('[WebClient] Client library:', clientLibrary)
+    Logger.info('[WebClient] Setting up Flex Microform')
+    Logger.debug('[WebClient] Client library:', clientLibrary)
 
     // Load the SDK
     await this.waitForLibrary(clientLibrary, clientLibraryIntegrity)
@@ -224,7 +224,7 @@ export class WebClient {
     stepUpUrl: string,
     accessToken: string,
     options?: ChallengeModalOptions
-  ): Promise<AuthenticationResult> {
+  ): Promise<any> {
     return this.challengeModal.show(stepUpUrl, accessToken, options)
   }
 
@@ -246,7 +246,7 @@ export class WebClient {
    * Clean up all resources
    */
   destroy(): void {
-    console.log('[WebClient] Destroying...')
+    Logger.info('[WebClient] Destroying...')
 
     this.deviceDataCollector.destroy()
     this.challengeModal.destroy()
@@ -259,7 +259,7 @@ export class WebClient {
     // Note: We don't remove the Flex script on destroy
     // to allow reuse. Call resetFlexSDK() if needed.
 
-    console.log('[WebClient] Destroyed')
+    Logger.info('[WebClient] Destroyed')
   }
 
   /**
@@ -270,6 +270,6 @@ export class WebClient {
     this.removeFlexScript()
     flexLoadPromise = null
     loadedFlexScriptUrl = null
-    console.log('[WebClient] Flex SDK reset')
+    Logger.info('[WebClient] Flex SDK reset')
   }
 }

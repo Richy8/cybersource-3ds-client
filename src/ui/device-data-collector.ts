@@ -1,4 +1,5 @@
 import type { DeviceDataOptions } from '../types'
+import { Logger } from '../utils'
 
 export class DeviceDataCollector {
   private iframe: HTMLIFrameElement | null = null
@@ -14,7 +15,7 @@ export class DeviceDataCollector {
     options?: DeviceDataOptions
   ): Promise<{ success: boolean; timeout?: boolean }> {
     return new Promise((resolve) => {
-      console.log('📱 Starting device data collection...')
+      Logger.info('📱 Starting device data collection...')
 
       const timeout = options?.timeout || 10000
 
@@ -48,7 +49,7 @@ export class DeviceDataCollector {
           event.origin.includes('cardinalcommerce.com') ||
           event.origin.includes('centinelapi')
         ) {
-          console.log('✅ Device data collection complete:', event.data)
+          Logger.debug('✅ Device data collection complete:', event.data)
           this.cleanup()
           resolve({ success: true })
         }
@@ -57,7 +58,7 @@ export class DeviceDataCollector {
 
       // Timeout
       const timeoutId = setTimeout(() => {
-        console.log('⏱️ Device data collection timeout - proceeding')
+        Logger.warn('⏱️ Device data collection timeout - proceeding')
         this.cleanup()
         resolve({ success: true, timeout: true })
       }, timeout)

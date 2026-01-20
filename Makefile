@@ -1,4 +1,4 @@
-.PHONY: build test clean publish push release-patch release-minor release-major npm-publish
+.PHONY: build test clean publish push release-patch release-minor release-major npm-publish npm-login npm-whoami
 
 VERSION := $(shell node -p "require('./package.json').version")
 
@@ -74,6 +74,11 @@ publish-dry-run:
 	@echo "Dry run for version $(VERSION)..."
 	npm publish --dry-run
 
+# Login to npm
+npm-login:
+	@echo "Logging in to npm..."
+	npm login
+
 # Check if you're logged in to npm
 npm-whoami:
 	@echo "Current npm user:"
@@ -94,9 +99,10 @@ help:
 	@echo "  make version-major      - Bump major version and push tags"
 	@echo ""
 	@echo "NPM Publishing:"
+	@echo "  make npm-login          - Login to npm registry"
+	@echo "  make npm-whoami         - Check current npm user"
 	@echo "  make npm-publish        - Publish current version to npm"
 	@echo "  make publish-dry-run    - Test publish without actually publishing"
-	@echo "  make npm-whoami         - Check current npm user"
 	@echo ""
 	@echo "Complete Release (bump + build + push + publish):"
 	@echo "  make release-patch      - Patch release (1.0.0 -> 1.0.1)"

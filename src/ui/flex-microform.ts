@@ -3,6 +3,7 @@ import type {
   FlexMicroformInstance,
   FlexTokenizeResult
 } from '../types'
+import { Logger } from '../utils'
 
 export class FlexMicroform {
   private microform: any = null
@@ -72,7 +73,7 @@ export class FlexMicroform {
       throw new Error('Failed to create field containers')
     }
 
-    console.log('[FlexMicroform] Initializing Flex v2...')
+    Logger.info('[FlexMicroform] Initializing Flex v2...')
 
     try {
       // Instantiate Flex with capture context (JWT)
@@ -97,7 +98,7 @@ export class FlexMicroform {
     // Create and load fields
     await this.createFields()
 
-    console.log('[FlexMicroform] ✅ Initialization complete')
+    Logger.info('[FlexMicroform] ✅ Initialization complete')
 
     return {
       tokenize: (expiryMonth: string, expiryYear: string) =>
@@ -306,13 +307,13 @@ export class FlexMicroform {
 
       // Set up event listeners before loading
       field.on('load', () => {
-        console.log(`[FlexMicroform] Field "${fieldType}" loaded`)
+        Logger.debug(`[FlexMicroform] Field "${fieldType}" loaded`)
         this.fields.set(fieldType, field)
         resolve()
       })
 
       field.on('error', (data: any) => {
-        console.error(`[FlexMicroform] Field "${fieldType}" error:`, data)
+        Logger.error(`[FlexMicroform] Field "${fieldType}" error:`, data)
         reject(new Error(`Failed to load field "${fieldType}": ${data?.message || 'Unknown error'}`))
       })
 
@@ -468,11 +469,11 @@ export class FlexMicroform {
         expirationYear: year
       }
 
-      console.log('[FlexMicroform] Tokenizing with options:', options)
+      Logger.debug('[FlexMicroform] Tokenizing with options:', options)
 
       this.microform.createToken(options, (error: any, token: string) => {
         if (error) {
-          console.error('[FlexMicroform] Tokenization error:', error)
+          Logger.error('[FlexMicroform] Tokenization error:', error)
 
           // Provide more helpful error messages
           let errorMessage = 'Tokenization failed'
@@ -496,7 +497,7 @@ export class FlexMicroform {
           return
         }
 
-        console.log('[FlexMicroform] ✅ Token created successfully')
+        Logger.info('[FlexMicroform] ✅ Token created successfully')
 
         // Decode JWT to extract metadata
         const tokenData = this.decodeToken(token)
@@ -519,7 +520,7 @@ export class FlexMicroform {
     try {
       const parts = token.split('.')
       if (parts.length !== 3) {
-        console.warn('[FlexMicroform] Invalid JWT structure')
+        Logger.warn('[FlexMicroform] Invalid JWT structure')
         return { maskedPan: '••••••••••••', cardType: 'unknown' }
       }
 
@@ -559,7 +560,7 @@ export class FlexMicroform {
 
       return { maskedPan, cardType }
     } catch (err) {
-      console.warn('[FlexMicroform] Could not decode token:', err)
+      Logger.warn('[FlexMicroform] Could not decode token:', err)
       return { maskedPan: '••••••••••••', cardType: 'unknown' }
     }
   }
@@ -665,6 +666,6 @@ export class FlexMicroform {
     this.microform = null
     this.flex = null
 
-    console.log('[FlexMicroform] Destroyed')
+    Logger.info('[FlexMicroform] Destroyed')
   }
 }
